@@ -1,0 +1,58 @@
+[
+  {
+    "id": "werewolf",
+    "name": "狼人",
+    "wakeUpOrder": 10,
+    "script": "狼人請睜開眼睛，確認你的同伴。",
+    "pauseSeconds": 10,
+    "rules": "夜間可以看見其他狼人。如果只有一隻狼人，可以查看一張中央的牌。"
+  },
+  {
+    "id": "minion",
+    "name": "爪牙",
+    "wakeUpOrder": 20,
+    "script": "爪牙請睜開眼睛。狼人請伸出大拇指，讓爪牙確認你們的身分。",
+    "pauseSeconds": 10,
+    "rules": "爪牙會知道誰是狼人，但狼人不知道誰是爪牙。爪牙的目標是保護狼人。"
+  },
+  {
+    "id": "seer",
+    "name": "預言家",
+    "wakeUpOrder": 30,
+    "script": "預言家請睜開眼睛。你可以查看一名玩家的牌，或兩張備用牌。",
+    "pauseSeconds": 15,
+    "rules": "可以選擇查看一名其他玩家的底牌，或是查看中央的三張牌中的兩張。"
+  },
+  {
+    "id": "robber",
+    "name": "強盜",
+    "wakeUpOrder": 40,
+    "script": "強盜請睜開眼睛。你可以交換一名玩家的牌並查看。",
+    "pauseSeconds": 15,
+    "rules": "可以選擇與一名玩家交換底牌，並查看自己換來的新牌。之後你的陣營跟著新牌走。"
+  },
+  {
+    "id": "troublemaker",
+    "name": "搗蛋鬼",
+    "wakeUpOrder": 50,
+    "script": "搗蛋鬼請睜開眼睛。請交換任意兩名玩家的底牌。",
+    "pauseSeconds": 15,
+    "rules": "盲換任意兩名其他玩家的底牌，不能看換了什麼牌。"
+  },
+  {
+    "id": "drunk",
+    "name": "酒鬼",
+    "wakeUpOrder": 60,
+    "script": "酒鬼請睜開眼睛。請將你的牌與中央的一張牌交換。",
+    "pauseSeconds": 10,
+    "rules": "必須將自己的底牌與中央三張牌的其中一張盲換，不能看新牌是什麼。"
+  },
+  {
+    "id": "insomniac",
+    "name": "失眠者",
+    "wakeUpOrder": 70,
+    "script": "失眠者請睜開眼睛。請確認你現在的身分。",
+    "pauseSeconds": 10,
+    "rules": "在夜間最後階段醒來，查看自己的底牌是否被其他人動過。"
+  }
+]
