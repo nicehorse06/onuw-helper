@@ -5,39 +5,272 @@ import rolesData from './data/roles.json'
 type Role = {
   id: string
   name: string
-  wakeUpOrder: number
+  wakeUpOrder: number | null
   script: string
   pauseSeconds: number
   rules: string
 }
 
-const roles = [...(rolesData as Role[])].sort((a, b) => a.wakeUpOrder - b.wakeUpOrder)
+type RoleFilter = 'all' | 'good' | 'evil' | 'selected'
+type PresetConfig = {
+  key: string
+  label: string
+  roleIds: string[]
+}
+
+function getWakeUpOrderValue(role: Role) {
+  return role.wakeUpOrder ?? Number.POSITIVE_INFINITY
+}
+
+function sortRolesForDisplay(a: Role, b: Role) {
+  if (a.id === 'werewolf' && b.id !== 'werewolf') {
+    return -1
+  }
+  if (b.id === 'werewolf' && a.id !== 'werewolf') {
+    return 1
+  }
+
+  const aWakeOrder = a.wakeUpOrder
+  const bWakeOrder = b.wakeUpOrder
+  const aWakesUp = aWakeOrder !== null
+  const bWakesUp = bWakeOrder !== null
+
+  if (aWakesUp && bWakesUp) {
+    return aWakeOrder - bWakeOrder
+  }
+
+  if (aWakesUp && !bWakesUp) {
+    return -1
+  }
+  if (!aWakesUp && bWakesUp) {
+    return 1
+  }
+
+  return a.name.localeCompare(b.name, 'zh-Hant')
+}
+
+const roles = [...(rolesData as Role[])].sort(sortRolesForDisplay)
 const selected = ref<Set<string>>(new Set())
 const isPlaying = ref(false)
 const speechSupported = 'speechSynthesis' in window
+const speechRate = ref(1)
+const announceSession = ref(0)
+const roleFilter = ref<RoleFilter>('all')
+const evilRoleIds = new Set(['werewolf', 'mystic_wolf', 'minion'])
 
 const selectedRoles = computed(() =>
-  roles.filter((role) => selected.value.has(role.id)).sort((a, b) => a.wakeUpOrder - b.wakeUpOrder)
+  roles.filter((role) => selected.value.has(role.id)).sort((a, b) => getWakeUpOrderValue(a) - getWakeUpOrderValue(b))
 )
+const selectedRoleCount = computed(() => selectedRoles.value.length)
+const wolfSeerIds = new Set(['wolfseer', 'wolf_seer', 'wolf-seer', 'mystic_wolf'])
+const hasWolfSeer = computed(() => selectedRoles.value.some((role) => wolfSeerIds.has(role.id)))
+const wolfTeamSummary = computed(() =>
+  hasWolfSeer.value ? '狼人陣營固定 2 張：狼先知 1 + 狼人 1' : '狼人陣營固定 2 張：狼人 2'
+)
+const presetConfigs: PresetConfig[] = [
+  {
+    key: 'p3',
+    label: '3 人',
+    roleIds: ['werewolf', 'mystic_wolf', 'seer', 'apprentice_seer', 'witch', 'robber']
+  },
+  {
+    key: 'p4',
+    label: '4 人',
+    roleIds: ['werewolf', 'mystic_wolf', 'seer', 'apprentice_seer', 'witch', 'robber', 'paranormal_investigator']
+  },
+  {
+    key: 'p5',
+    label: '5 人',
+    roleIds: [
+      'werewolf',
+      'mystic_wolf',
+      'seer',
+      'apprentice_seer',
+      'witch',
+      'robber',
+      'paranormal_investigator',
+      'tanner'
+    ]
+  },
+  {
+    key: 'p6',
+    label: '6 人',
+    roleIds: [
+      'werewolf',
+      'mystic_wolf',
+      'seer',
+      'apprentice_seer',
+      'witch',
+      'robber',
+      'paranormal_investigator',
+      'tanner',
+      'insomniac'
+    ]
+  },
+  {
+    key: 'p7',
+    label: '7 人',
+    roleIds: [
+      'werewolf',
+      'mystic_wolf',
+      'seer',
+      'apprentice_seer',
+      'witch',
+      'robber',
+      'paranormal_investigator',
+      'tanner',
+      'insomniac',
+      'sentinel'
+    ]
+  },
+  {
+    key: 'p8',
+    label: '8 人',
+    roleIds: [
+      'werewolf',
+      'mystic_wolf',
+      'seer',
+      'apprentice_seer',
+      'witch',
+      'robber',
+      'paranormal_investigator',
+      'tanner',
+      'insomniac',
+      'sentinel',
+      'hunter'
+    ]
+  },
+  {
+    key: 'p9-minion',
+    label: '9 人（爪牙版）',
+    roleIds: [
+      'werewolf',
+      'mystic_wolf',
+      'seer',
+      'apprentice_seer',
+      'witch',
+      'robber',
+      'paranormal_investigator',
+      'tanner',
+      'insomniac',
+      'sentinel',
+      'hunter',
+      'minion'
+    ]
+  },
+  {
+    key: 'p9-villager',
+    label: '9 人（村民版）',
+    roleIds: [
+      'werewolf',
+      'mystic_wolf',
+      'seer',
+      'apprentice_seer',
+      'witch',
+      'robber',
+      'paranormal_investigator',
+      'tanner',
+      'insomniac',
+      'sentinel',
+      'hunter',
+      'villager'
+    ]
+  }
+]
 
-const scriptText = computed(() => {
-  if (selectedRoles.value.length === 0) {
-    return '請先勾選角色，系統會依照喚醒順序生成腳本。'
+const filteredRoles = computed(() => {
+  if (roleFilter.value === 'good') {
+    return roles.filter((role) => !evilRoleIds.has(role.id))
   }
 
-  return selectedRoles.value
-    .map((role, index) => `${index + 1}. ${role.name}（${role.pauseSeconds} 秒）\n${role.script}`)
-    .join('\n\n')
+  if (roleFilter.value === 'evil') {
+    return roles.filter((role) => evilRoleIds.has(role.id))
+  }
+
+  if (roleFilter.value === 'selected') {
+    return roles.filter((role) => selected.value.has(role.id))
+  }
+
+  return roles
 })
+
+const announcementLines = computed(() => {
+  if (selectedRoles.value.length === 0) {
+    return ['請先勾選角色，系統會依照喚醒順序生成腳本。']
+  }
+
+  const lines: string[] = ['夜晚開始，請全部玩家閉上眼睛。']
+
+  selectedRoles.value.forEach((role, index) => {
+    lines.push(`${index + 1}. ${role.name}`)
+    lines.push(role.script)
+    if (role.pauseSeconds > 0) {
+      lines.push(`（倒數 ${role.pauseSeconds} 秒，每秒唸一次）`)
+    }
+    lines.push('（倒數內容：' + Array.from({ length: role.pauseSeconds }, (_, i) => role.pauseSeconds - i).join('、') + '）')
+    lines.push('')
+  })
+
+  lines.push('夜晚結束，所有玩家請睜開眼睛。')
+  return lines
+})
+
+const scriptText = computed(() => {
+  return announcementLines.value.join('\n').trim()
+})
+
+function decodeRoleList(raw: string) {
+  let normalized = raw.trim()
+
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      const decoded = decodeURIComponent(normalized)
+      if (decoded === normalized) {
+        break
+      }
+      normalized = decoded
+    } catch {
+      break
+    }
+  }
+
+  normalized = normalized.replace(/%2C/gi, ',')
+  return normalized
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean)
+}
+
+function parseRoleIdsFromUrl(params: URLSearchParams) {
+  const roleParams = params.getAll('roles')
+  if (roleParams.length > 1) {
+    return roleParams.map((id) => id.trim()).filter(Boolean)
+  }
+
+  const single = params.get('roles')
+  if (!single) {
+    return []
+  }
+
+  return decodeRoleList(single)
+}
+
+function isRoleFilter(value: string | null): value is RoleFilter {
+  return value === 'all' || value === 'good' || value === 'evil' || value === 'selected'
+}
 
 function syncUrl() {
   const query = new URLSearchParams(window.location.search)
   const ids = Array.from(selected.value).sort()
 
+  query.delete('roles')
   if (ids.length > 0) {
-    query.set('roles', ids.join(','))
+    ids.forEach((id) => query.append('roles', id))
+  }
+  if (roleFilter.value === 'all') {
+    query.delete('filter')
   } else {
-    query.delete('roles')
+    query.set('filter', roleFilter.value)
   }
 
   const next = `${window.location.pathname}${query.toString() ? `?${query.toString()}` : ''}`
@@ -46,18 +279,14 @@ function syncUrl() {
 
 function restoreFromUrl() {
   const params = new URLSearchParams(window.location.search)
-  const fromUrl = params.get('roles')
-  if (!fromUrl) {
-    return
-  }
-
   const valid = new Set(roles.map((role) => role.id))
-  selected.value = new Set(
-    fromUrl
-      .split(',')
-      .map((id) => id.trim())
-      .filter((id) => valid.has(id))
-  )
+  const roleIds = parseRoleIdsFromUrl(params)
+  selected.value = new Set(roleIds.map((id) => id.trim()).filter((id) => valid.has(id)))
+
+  const filterFromUrl = params.get('filter')
+  if (isRoleFilter(filterFromUrl)) {
+    roleFilter.value = filterFromUrl
+  }
 }
 
 function toggleRole(roleId: string, checked: boolean) {
@@ -70,10 +299,71 @@ function toggleRole(roleId: string, checked: boolean) {
   selected.value = next
 }
 
+function applyPreset(preset: PresetConfig) {
+  const validIds = new Set(roles.map((role) => role.id))
+  selected.value = new Set(preset.roleIds.filter((id) => validIds.has(id)))
+  roleFilter.value = 'selected'
+}
+
+function getRoleFilterCount(filter: RoleFilter) {
+  if (filter === 'all') {
+    return roles.length
+  }
+
+  if (filter === 'selected') {
+    return selectedRoles.value.length
+  }
+
+  if (filter === 'good') {
+    return roles.filter((role) => !evilRoleIds.has(role.id)).length
+  }
+
+  return roles.filter((role) => evilRoleIds.has(role.id)).length
+}
+
 function sleep(ms: number) {
   return new Promise<void>((resolve) => {
     window.setTimeout(resolve, ms)
   })
+}
+
+async function sleepWithCancel(ms: number, sessionId: number) {
+  const stepMs = 250
+  let elapsed = 0
+  while (elapsed < ms) {
+    if (announceSession.value !== sessionId) {
+      return false
+    }
+    const remaining = Math.min(stepMs, ms - elapsed)
+    await sleep(remaining)
+    elapsed += remaining
+  }
+  return announceSession.value === sessionId
+}
+
+async function countDown(seconds: number, sessionId: number) {
+  for (let current = seconds; current >= 1; current -= 1) {
+    if (announceSession.value !== sessionId) {
+      return false
+    }
+
+    const start = performance.now()
+    await speak(String(current))
+    if (announceSession.value !== sessionId) {
+      return false
+    }
+
+    const elapsed = performance.now() - start
+    const remain = Math.max(0, 1000 - elapsed)
+    if (remain > 0) {
+      const notCanceled = await sleepWithCancel(remain, sessionId)
+      if (!notCanceled) {
+        return false
+      }
+    }
+  }
+
+  return true
 }
 
 function speak(text: string) {
@@ -85,7 +375,7 @@ function speak(text: string) {
 
     const utterance = new SpeechSynthesisUtterance(text)
     utterance.lang = 'zh-TW'
-    utterance.rate = 1
+    utterance.rate = speechRate.value
     utterance.onend = () => resolve()
     utterance.onerror = () => resolve()
     window.speechSynthesis.speak(utterance)
@@ -97,6 +387,8 @@ async function announce() {
     return
   }
 
+  const sessionId = announceSession.value + 1
+  announceSession.value = sessionId
   isPlaying.value = true
   if (speechSupported) {
     window.speechSynthesis.cancel()
@@ -104,16 +396,29 @@ async function announce() {
 
   try {
     await speak('夜晚開始，請全部玩家閉上眼睛。')
+    if (announceSession.value !== sessionId) return
     for (const role of selectedRoles.value) {
+      if (announceSession.value !== sessionId) return
       await speak(role.script)
-      if (role.pauseSeconds > 5) {
-        await sleep((role.pauseSeconds - 5) * 1000)
+      if (announceSession.value !== sessionId) return
+      if (role.pauseSeconds > 0) {
+        const notCanceled = await countDown(role.pauseSeconds, sessionId)
+        if (!notCanceled) return
       }
-      await speak('五，四，三，二，一。')
     }
     await speak('夜晚結束，所有玩家請睜開眼睛。')
   } finally {
-    isPlaying.value = false
+    if (announceSession.value === sessionId) {
+      isPlaying.value = false
+    }
+  }
+}
+
+function stopAnnounce() {
+  announceSession.value += 1
+  isPlaying.value = false
+  if (speechSupported) {
+    window.speechSynthesis.cancel()
   }
 }
 
@@ -126,7 +431,34 @@ async function copyScript() {
   }
 }
 
-watch(selected, syncUrl, { deep: false })
+async function copyRoleOnlyScript() {
+  if (selectedRoles.value.length === 0) {
+    window.alert('請先勾選角色')
+    return
+  }
+
+  const roleOnlyText = selectedRoles.value
+    .map((role, index) => `${index + 1}. ${role.name}（${role.pauseSeconds} 秒）\n${role.script}`)
+    .join('\n\n')
+
+  try {
+    await navigator.clipboard.writeText(roleOnlyText)
+    window.alert('角色腳本已複製到剪貼簿')
+  } catch {
+    window.alert('複製失敗，請手動複製角色腳本文字')
+  }
+}
+
+async function copyShareUrl() {
+  try {
+    await navigator.clipboard.writeText(window.location.href)
+    window.alert('分享網址已複製到剪貼簿')
+  } catch {
+    window.alert('複製失敗，請手動複製網址列')
+  }
+}
+
+watch([selected, roleFilter], syncUrl, { deep: false })
 onMounted(restoreFromUrl)
 </script>
 
@@ -137,9 +469,72 @@ onMounted(restoreFromUrl)
 
     <section class="mb-6 rounded-lg bg-white p-4 shadow-sm">
       <h2 class="mb-3 text-xl font-semibold">角色選擇</h2>
+      <div class="mb-4 rounded-md bg-slate-100 p-3 text-sm text-slate-700">
+        <p>目前勾選角色：{{ selectedRoleCount }} 個</p>
+        <p class="mt-1">{{ wolfTeamSummary }}</p>
+      </div>
+      <div class="mb-3">
+        <p class="mb-2 text-sm font-medium text-slate-700">快捷配置（3-9 人）</p>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="preset in presetConfigs"
+            :key="preset.key"
+            class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            @click="applyPreset(preset)"
+          >
+            {{ preset.label }}
+          </button>
+        </div>
+      </div>
+      <div class="mb-3 flex flex-wrap gap-2">
+        <button
+          class="rounded border px-3 py-1.5 text-sm"
+          :class="
+            roleFilter === 'all'
+              ? 'border-slate-900 bg-slate-900 text-white'
+              : 'border-slate-300 bg-white text-slate-700'
+          "
+          @click="roleFilter = 'all'"
+        >
+          全部（{{ getRoleFilterCount('all') }}）
+        </button>
+        <button
+          class="rounded border px-3 py-1.5 text-sm"
+          :class="
+            roleFilter === 'good'
+              ? 'border-slate-900 bg-slate-900 text-white'
+              : 'border-slate-300 bg-white text-slate-700'
+          "
+          @click="roleFilter = 'good'"
+        >
+          好人（{{ getRoleFilterCount('good') }}）
+        </button>
+        <button
+          class="rounded border px-3 py-1.5 text-sm"
+          :class="
+            roleFilter === 'evil'
+              ? 'border-slate-900 bg-slate-900 text-white'
+              : 'border-slate-300 bg-white text-slate-700'
+          "
+          @click="roleFilter = 'evil'"
+        >
+          壞人（{{ getRoleFilterCount('evil') }}）
+        </button>
+        <button
+          class="rounded border px-3 py-1.5 text-sm"
+          :class="
+            roleFilter === 'selected'
+              ? 'border-slate-900 bg-slate-900 text-white'
+              : 'border-slate-300 bg-white text-slate-700'
+          "
+          @click="roleFilter = 'selected'"
+        >
+          已勾選（{{ getRoleFilterCount('selected') }}）
+        </button>
+      </div>
       <div class="grid gap-3 sm:grid-cols-2">
         <label
-          v-for="role in roles"
+          v-for="role in filteredRoles"
           :key="role.id"
           class="flex cursor-pointer items-start gap-3 rounded border border-slate-200 p-3 hover:bg-slate-50"
         >
@@ -155,6 +550,7 @@ onMounted(restoreFromUrl)
           </span>
         </label>
       </div>
+      <p v-if="filteredRoles.length === 0" class="mt-3 text-sm text-slate-500">此篩選下目前沒有角色可顯示。</p>
     </section>
 
     <section class="rounded-lg bg-white p-4 shadow-sm">
@@ -164,9 +560,33 @@ onMounted(restoreFromUrl)
           :disabled="selectedRoles.length === 0 || isPlaying"
           @click="announce"
         >
-          {{ isPlaying ? '播報中...' : '開始語音播報' }}
+          開始語音播報
         </button>
-        <button class="rounded border border-slate-300 px-4 py-2" @click="copyScript">複製腳本</button>
+        <button
+          class="rounded border border-red-300 px-4 py-2 text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!isPlaying"
+          @click="stopAnnounce"
+        >
+          停止播報
+        </button>
+        <button class="rounded border border-slate-300 px-4 py-2" @click="copyShareUrl">複製分享網址</button>
+        <button class="rounded border border-slate-300 px-4 py-2" @click="copyScript">複製完整播報稿</button>
+        <button class="rounded border border-slate-300 px-4 py-2" @click="copyRoleOnlyScript">複製角色腳本</button>
+      </div>
+      <div class="mb-4 rounded-md bg-slate-100 p-3">
+        <label class="mb-2 block text-sm font-medium text-slate-700" for="speech-rate">
+          播報速度：{{ speechRate.toFixed(1) }}x
+        </label>
+        <input
+          id="speech-rate"
+          v-model.number="speechRate"
+          class="w-full"
+          type="range"
+          min="0.6"
+          max="1.6"
+          step="0.1"
+        />
+        <p class="mt-1 text-xs text-slate-500">只影響語音速度，不改變每段操作停頓秒數。</p>
       </div>
 
       <h2 class="mb-2 text-xl font-semibold">生成腳本</h2>
