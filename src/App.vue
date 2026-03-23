@@ -370,10 +370,22 @@ function getZhVoices(voices: SpeechSynthesisVoice[]) {
   return voices.filter((voice) => voice.lang.toLowerCase().startsWith('zh'))
 }
 
+function normalizeVoiceLang(lang: string) {
+  return lang.toLowerCase().replace(/_/g, '-')
+}
+
 function pickNaturalDefaultZhVoice(voices: SpeechSynthesisVoice[]) {
   const zhVoices = getZhVoices(voices)
   if (zhVoices.length === 0) {
     return voices[0]
+  }
+
+  const zhTwOrHant = zhVoices.find((voice) => {
+    const normalizedLang = normalizeVoiceLang(voice.lang)
+    return normalizedLang.startsWith('zh-tw') || normalizedLang.includes('hant')
+  })
+  if (zhTwOrHant) {
+    return zhTwOrHant
   }
 
   const preferredKeywords = ['natural', 'premium', 'neural', 'mei-jia', 'xiaoxiao', 'yunxi', 'google']
@@ -382,11 +394,6 @@ function pickNaturalDefaultZhVoice(voices: SpeechSynthesisVoice[]) {
   )
   if (keywordMatch) {
     return keywordMatch
-  }
-
-  const zhTw = zhVoices.find((voice) => voice.lang.toLowerCase().startsWith('zh-tw'))
-  if (zhTw) {
-    return zhTw
   }
 
   return zhVoices[0]
