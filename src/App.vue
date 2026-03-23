@@ -60,13 +60,32 @@ const closeEyesSeconds = 3
 const sentencePauseMs = 350
 const roleFilter = ref<RoleFilter>('all')
 const evilRoleIds = new Set(['werewolf', 'mystic_wolf', 'minion'])
+const neutralRoleIds = new Set(['tanner'])
+const roleCardCountOverrides = new Map<string, number>([['sentinel', 2]])
 const availableVoices = ref<SpeechSynthesisVoice[]>([])
 const selectedVoiceURI = ref('')
+
+function getRoleCardCount(role: Role) {
+  return roleCardCountOverrides.get(role.id) ?? 1
+}
 
 const selectedRoles = computed(() =>
   roles.filter((role) => selected.value.has(role.id)).sort((a, b) => getWakeUpOrderValue(a) - getWakeUpOrderValue(b))
 )
 const selectedRoleCount = computed(() => selectedRoles.value.length)
+const selectedCardCount = computed(() => selectedRoles.value.reduce((total, role) => total + getRoleCardCount(role), 0))
+const playerCount = computed(() => Math.max(0, selectedCardCount.value - 3))
+const selectedGoodRoles = computed(() =>
+  selectedRoles.value.filter((role) => !evilRoleIds.has(role.id) && !neutralRoleIds.has(role.id))
+)
+const villageTeamSummary = computed(() => {
+  if (selectedGoodRoles.value.length === 0) {
+    return '村民陣營：目前沒有勾選好人角色'
+  }
+
+  const parts = selectedGoodRoles.value.map((role) => `${role.name} ${getRoleCardCount(role)}`)
+  return `村民陣營：${parts.join(' + ')}`
+})
 const hasMinion = computed(() => selectedRoles.value.some((role) => role.id === 'minion'))
 const nightStartLine = computed(() =>
   hasMinion.value ? '夜晚開始，請全部玩家閉上眼睛並且手伸出來。' : '夜晚開始，請全部玩家閉上眼睛。'
@@ -79,7 +98,7 @@ const wolfTeamSummary = computed(() => {
   if (hasMinion.value) {
     parts.push('爪牙 1')
   }
-  return `狼人陣營固定 ${evilCardCount} 張：${parts.join(' + ')}`
+  return `狼人陣營 ${evilCardCount} 張：${parts.join(' + ')}`
 })
 const presetConfigs: PresetConfig[] = [
   {
@@ -133,7 +152,6 @@ const presetConfigs: PresetConfig[] = [
       'robber',
       'paranormal_investigator',
       'tanner',
-      'insomniac',
       'sentinel'
     ]
   },
@@ -149,7 +167,6 @@ const presetConfigs: PresetConfig[] = [
       'robber',
       'paranormal_investigator',
       'tanner',
-      'insomniac',
       'sentinel',
       'hunter'
     ]
@@ -166,7 +183,6 @@ const presetConfigs: PresetConfig[] = [
       'robber',
       'paranormal_investigator',
       'tanner',
-      'insomniac',
       'sentinel',
       'hunter',
       'minion'
@@ -184,7 +200,6 @@ const presetConfigs: PresetConfig[] = [
       'robber',
       'paranormal_investigator',
       'tanner',
-      'insomniac',
       'sentinel',
       'hunter',
       'villager'
@@ -577,7 +592,9 @@ onUnmounted(() => {
     <section class="mb-6 rounded-lg bg-white p-4 shadow-sm">
       <h2 class="mb-3 text-xl font-semibold">角色選擇</h2>
       <div class="mb-4 rounded-md bg-slate-100 p-3 text-sm text-slate-700">
-        <p>目前勾選角色：{{ selectedRoleCount }} 個</p>
+        <p>目前勾選角色：{{ selectedRoleCount }} 個（實際牌數：{{ selectedCardCount }} 張）</p>
+        <p class="mt-1">本局人數：{{ playerCount }} 人（中央 3 張）</p>
+        <p class="mt-1">{{ villageTeamSummary }}</p>
         <p class="mt-1">{{ wolfTeamSummary }}</p>
       </div>
       <div class="mb-3">
