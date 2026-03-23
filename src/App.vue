@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import rolesData from './data/roles.json'
 
 type Role = {
@@ -54,9 +54,14 @@ const selected = ref<Set<string>>(new Set())
 const isPlaying = ref(false)
 const speechSupported = 'speechSynthesis' in window
 const speechRate = ref(1)
+const speechPitch = ref(1)
 const announceSession = ref(0)
+const closeEyesSeconds = 3
+const sentencePauseMs = 350
 const roleFilter = ref<RoleFilter>('all')
 const evilRoleIds = new Set(['werewolf', 'mystic_wolf', 'minion'])
+const availableVoices = ref<SpeechSynthesisVoice[]>([])
+const selectedVoiceURI = ref('')
 
 const selectedRoles = computed(() =>
   roles.filter((role) => selected.value.has(role.id)).sort((a, b) => getWakeUpOrderValue(a) - getWakeUpOrderValue(b))
@@ -204,10 +209,12 @@ const announcementLines = computed(() => {
   selectedRoles.value.forEach((role, index) => {
     lines.push(`${index + 1}. ${role.name}`)
     lines.push(role.script)
-    if (role.pauseSeconds > 0) {
+    if (roleNeedsWakeUp(role)) {
       lines.push(`（倒數 ${role.pauseSeconds} 秒，每秒唸一次）`)
+      lines.push(`（倒數內容：${Array.from({ length: role.pauseSeconds }, (_, i) => role.pauseSeconds - i).join('、')}）`)
+      lines.push(`請閉上眼睛。（倒數 ${closeEyesSeconds} 秒）`)
+      lines.push(`（倒數內容：${Array.from({ length: closeEyesSeconds }, (_, i) => closeEyesSeconds - i).join('、')}）`)
     }
-    lines.push('（倒數內容：' + Array.from({ length: role.pauseSeconds }, (_, i) => role.pauseSeconds - i).join('、') + '）')
     lines.push('')
   })
 
@@ -341,6 +348,53 @@ async function sleepWithCancel(ms: number, sessionId: number) {
   return announceSession.value === sessionId
 }
 
+function roleNeedsWakeUp(role: Role) {
+  return role.wakeUpOrder !== null && role.pauseSeconds > 0
+}
+
+function getZhVoices(voices: SpeechSynthesisVoice[]) {
+  return voices.filter((voice) => voice.lang.toLowerCase().startsWith('zh'))
+}
+
+function pickNaturalDefaultZhVoice(voices: SpeechSynthesisVoice[]) {
+  const zhVoices = getZhVoices(voices)
+  if (zhVoices.length === 0) {
+    return voices[0]
+  }
+
+  const preferredKeywords = ['natural', 'premium', 'neural', 'mei-jia', 'xiaoxiao', 'yunxi', 'google']
+  const keywordMatch = zhVoices.find((voice) =>
+    preferredKeywords.some((keyword) => voice.name.toLowerCase().includes(keyword))
+  )
+  if (keywordMatch) {
+    return keywordMatch
+  }
+
+  const zhTw = zhVoices.find((voice) => voice.lang.toLowerCase().startsWith('zh-tw'))
+  if (zhTw) {
+    return zhTw
+  }
+
+  return zhVoices[0]
+}
+
+function refreshVoices() {
+  if (!speechSupported) {
+    return
+  }
+
+  const voices = window.speechSynthesis.getVoices()
+  availableVoices.value = voices
+
+  const hasCurrent = voices.some((voice) => voice.voiceURI === selectedVoiceURI.value)
+  if (hasCurrent) {
+    return
+  }
+
+  const naturalVoice = pickNaturalDefaultZhVoice(voices)
+  selectedVoiceURI.value = naturalVoice?.voiceURI ?? ''
+}
+
 async function countDown(seconds: number, sessionId: number) {
   for (let current = seconds; current >= 1; current -= 1) {
     if (announceSession.value !== sessionId) {
@@ -374,8 +428,15 @@ function speak(text: string) {
     }
 
     const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = 'zh-TW'
+    const selectedVoice = availableVoices.value.find((voice) => voice.voiceURI === selectedVoiceURI.value)
+    if (selectedVoice) {
+      utterance.voice = selectedVoice
+      utterance.lang = selectedVoice.lang
+    } else {
+      utterance.lang = 'zh-TW'
+    }
     utterance.rate = speechRate.value
+    utterance.pitch = speechPitch.value
     utterance.onend = () => resolve()
     utterance.onerror = () => resolve()
     window.speechSynthesis.speak(utterance)
@@ -397,13 +458,20 @@ async function announce() {
   try {
     await speak('夜晚開始，請全部玩家閉上眼睛。')
     if (announceSession.value !== sessionId) return
+    if (!(await sleepWithCancel(sentencePauseMs, sessionId))) return
     for (const role of selectedRoles.value) {
       if (announceSession.value !== sessionId) return
       await speak(role.script)
       if (announceSession.value !== sessionId) return
-      if (role.pauseSeconds > 0) {
+      if (!(await sleepWithCancel(sentencePauseMs, sessionId))) return
+      if (roleNeedsWakeUp(role)) {
         const notCanceled = await countDown(role.pauseSeconds, sessionId)
         if (!notCanceled) return
+        await speak('請閉上眼睛。')
+        if (announceSession.value !== sessionId) return
+        if (!(await sleepWithCancel(sentencePauseMs, sessionId))) return
+        const closeEyesDone = await countDown(closeEyesSeconds, sessionId)
+        if (!closeEyesDone) return
       }
     }
     await speak('夜晚結束，所有玩家請睜開眼睛。')
@@ -459,7 +527,18 @@ async function copyShareUrl() {
 }
 
 watch([selected, roleFilter], syncUrl, { deep: false })
-onMounted(restoreFromUrl)
+onMounted(() => {
+  restoreFromUrl()
+  refreshVoices()
+  if (speechSupported) {
+    window.speechSynthesis.addEventListener('voiceschanged', refreshVoices)
+  }
+})
+onUnmounted(() => {
+  if (speechSupported) {
+    window.speechSynthesis.removeEventListener('voiceschanged', refreshVoices)
+  }
+})
 </script>
 
 <template>
@@ -574,8 +653,19 @@ onMounted(restoreFromUrl)
         <button class="rounded border border-slate-300 px-4 py-2" @click="copyRoleOnlyScript">複製角色腳本</button>
       </div>
       <div class="mb-4 rounded-md bg-slate-100 p-3">
+        <label class="mb-2 block text-sm font-medium text-slate-700" for="voice-select">語音</label>
+        <select
+          id="voice-select"
+          v-model="selectedVoiceURI"
+          class="mb-3 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+          :disabled="availableVoices.length === 0"
+        >
+          <option v-for="voice in availableVoices" :key="voice.voiceURI" :value="voice.voiceURI">
+            {{ voice.name }}（{{ voice.lang }}）
+          </option>
+        </select>
         <label class="mb-2 block text-sm font-medium text-slate-700" for="speech-rate">
-          播報速度：{{ speechRate.toFixed(1) }}x
+          語速：{{ speechRate.toFixed(1) }}x
         </label>
         <input
           id="speech-rate"
@@ -586,7 +676,19 @@ onMounted(restoreFromUrl)
           max="1.6"
           step="0.1"
         />
-        <p class="mt-1 text-xs text-slate-500">只影響語音速度，不改變每段操作停頓秒數。</p>
+        <label class="mb-2 mt-3 block text-sm font-medium text-slate-700" for="speech-pitch">
+          音高：{{ speechPitch.toFixed(1) }}
+        </label>
+        <input
+          id="speech-pitch"
+          v-model.number="speechPitch"
+          class="w-full"
+          type="range"
+          min="0.8"
+          max="1.4"
+          step="0.1"
+        />
+        <p class="mt-1 text-xs text-slate-500">已加入句子間停頓，倒數仍維持每秒一個數字。</p>
       </div>
 
       <h2 class="mb-2 text-xl font-semibold">生成腳本</h2>
