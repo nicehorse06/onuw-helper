@@ -54,6 +54,7 @@ const selected = ref<Set<string>>(new Set())
 const isPlaying = ref(false)
 const speechSupported = 'speechSynthesis' in window
 const speechRate = ref(1)
+const countdownSpeechRate = ref(1)
 const speechPitch = ref(1)
 const announceSession = ref(0)
 const closeEyesSeconds = 3
@@ -486,7 +487,7 @@ async function countDown(seconds: number, sessionId: number) {
     }
 
     const start = performance.now()
-    await speak(String(current))
+    await speak(String(current), countdownSpeechRate.value)
     if (announceSession.value !== sessionId) {
       return false
     }
@@ -504,7 +505,7 @@ async function countDown(seconds: number, sessionId: number) {
   return true
 }
 
-function speak(text: string) {
+function speak(text: string, rateOverride?: number) {
   return new Promise<void>((resolve) => {
     if (!speechSupported) {
       resolve()
@@ -519,7 +520,7 @@ function speak(text: string) {
     } else {
       utterance.lang = 'zh-TW'
     }
-    utterance.rate = speechRate.value
+    utterance.rate = rateOverride ?? speechRate.value
     utterance.pitch = speechPitch.value
     utterance.onend = () => resolve()
     utterance.onerror = () => resolve()
@@ -618,7 +619,11 @@ async function copyShareUrl() {
 }
 
 watch([selected, roleFilter], syncUrl, { deep: false })
+watch(selected, () => {
+  stopAnnounce()
+}, { deep: false })
 onMounted(() => {
+  stopAnnounce()
   restoreFromUrl()
   refreshVoices()
   if (speechSupported) {
@@ -626,6 +631,7 @@ onMounted(() => {
   }
 })
 onUnmounted(() => {
+  stopAnnounce()
   if (speechSupported) {
     window.speechSynthesis.removeEventListener('voiceschanged', refreshVoices)
   }
@@ -763,6 +769,18 @@ onUnmounted(() => {
         <input
           id="speech-rate"
           v-model.number="speechRate"
+          class="w-full"
+          type="range"
+          min="0.6"
+          max="1.6"
+          step="0.1"
+        />
+        <label class="mb-2 mt-3 block text-sm font-medium text-slate-700" for="countdown-speech-rate">
+          讀秒語速：{{ countdownSpeechRate.toFixed(1) }}x
+        </label>
+        <input
+          id="countdown-speech-rate"
+          v-model.number="countdownSpeechRate"
           class="w-full"
           type="range"
           min="0.6"
