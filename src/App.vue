@@ -12,10 +12,14 @@ type Role = {
 }
 
 type RoleFilter = 'all' | 'good' | 'evil' | 'selected'
+type PresetRole = {
+  id: string
+  count?: number
+}
 type PresetConfig = {
   key: string
   label: string
-  roleIds: string[]
+  roles: PresetRole[]
 }
 
 function getWakeUpOrderValue(role: Role) {
@@ -51,6 +55,7 @@ function sortRolesForDisplay(a: Role, b: Role) {
 
 const roles = [...(rolesData as Role[])].sort(sortRolesForDisplay)
 const selected = ref<Set<string>>(new Set())
+const selectedRoleCountOverrides = ref<Map<string, number>>(new Map())
 const isPlaying = ref(false)
 const speechSupported = 'speechSynthesis' in window
 const speechRate = ref(1)
@@ -60,14 +65,19 @@ const announceSession = ref(0)
 const closeEyesSeconds = 3
 const sentencePauseMs = 350
 const roleFilter = ref<RoleFilter>('all')
+const useBasicPresets = ref(true)
 const evilRoleIds = new Set(['werewolf', 'mystic_wolf', 'minion'])
 const neutralRoleIds = new Set(['tanner'])
-const roleCardCountOverrides = new Map<string, number>([['sentinel', 2]])
+const defaultRoleCardCountOverrides = new Map<string, number>([['sentinel', 2]])
 const availableVoices = ref<SpeechSynthesisVoice[]>([])
 const selectedVoiceURI = ref('')
 
+function getRoleCardCountById(roleId: string) {
+  return selectedRoleCountOverrides.value.get(roleId) ?? defaultRoleCardCountOverrides.get(roleId) ?? 1
+}
+
 function getRoleCardCount(role: Role) {
-  return roleCardCountOverrides.get(role.id) ?? 1
+  return getRoleCardCountById(role.id)
 }
 
 const selectedRoles = computed(() =>
@@ -87,126 +97,253 @@ const villageTeamSummary = computed(() => {
   const parts = selectedGoodRoles.value.map((role) => `${role.name} ${getRoleCardCount(role)}`)
   return `村民陣營：${parts.join(' + ')}`
 })
-const hasMinion = computed(() => selectedRoles.value.some((role) => role.id === 'minion'))
+const hasMinion = computed(() => selected.value.has('minion') && getRoleCardCountById('minion') > 0)
 const nightStartLine = computed(() =>
   hasMinion.value ? '夜晚開始，請全部玩家閉上眼睛並且手伸出來。' : '夜晚開始，請全部玩家閉上眼睛。'
 )
-const wolfSeerIds = new Set(['wolfseer', 'wolf_seer', 'wolf-seer', 'mystic_wolf'])
-const hasWolfSeer = computed(() => selectedRoles.value.some((role) => wolfSeerIds.has(role.id)))
 const wolfTeamSummary = computed(() => {
-  const parts = hasWolfSeer.value ? ['狼先知 1', '狼人 1'] : ['狼人 2']
-  const evilCardCount = 2 + (hasMinion.value ? 1 : 0)
-  if (hasMinion.value) {
-    parts.push('爪牙 1')
+  const werewolfCount = selected.value.has('werewolf') ? getRoleCardCountById('werewolf') : 0
+  const mysticWolfCount = selected.value.has('mystic_wolf') ? getRoleCardCountById('mystic_wolf') : 0
+  const minionCount = selected.value.has('minion') ? getRoleCardCountById('minion') : 0
+  const evilCardCount = werewolfCount + mysticWolfCount + minionCount
+  const parts: string[] = []
+
+  if (werewolfCount > 0) {
+    parts.push(`狼人 ${werewolfCount}`)
   }
+  if (mysticWolfCount > 0) {
+    parts.push(`狼先知 ${mysticWolfCount}`)
+  }
+  if (hasMinion.value) {
+    parts.push(`爪牙 ${minionCount}`)
+  }
+
+  if (parts.length === 0) {
+    return '狼人陣營：目前沒有勾選壞人角色'
+  }
+
   return `狼人陣營 ${evilCardCount} 張：${parts.join(' + ')}`
 })
-const presetConfigs: PresetConfig[] = [
+const legacyPresetConfigs: PresetConfig[] = [
   {
     key: 'p3',
     label: '3 人',
-    roleIds: ['werewolf', 'mystic_wolf', 'seer', 'apprentice_seer', 'witch', 'robber']
+    roles: [
+      { id: 'werewolf' },
+      { id: 'mystic_wolf' },
+      { id: 'seer' },
+      { id: 'apprentice_seer' },
+      { id: 'witch' },
+      { id: 'robber' }
+    ]
   },
   {
     key: 'p4',
     label: '4 人',
-    roleIds: ['werewolf', 'mystic_wolf', 'seer', 'apprentice_seer', 'witch', 'robber', 'paranormal_investigator']
+    roles: [
+      { id: 'werewolf' },
+      { id: 'mystic_wolf' },
+      { id: 'seer' },
+      { id: 'apprentice_seer' },
+      { id: 'witch' },
+      { id: 'robber' },
+      { id: 'paranormal_investigator' }
+    ]
   },
   {
     key: 'p5',
     label: '5 人',
-    roleIds: [
-      'werewolf',
-      'mystic_wolf',
-      'seer',
-      'apprentice_seer',
-      'witch',
-      'robber',
-      'paranormal_investigator',
-      'tanner'
+    roles: [
+      { id: 'werewolf' },
+      { id: 'mystic_wolf' },
+      { id: 'seer' },
+      { id: 'apprentice_seer' },
+      { id: 'witch' },
+      { id: 'robber' },
+      { id: 'paranormal_investigator' },
+      { id: 'tanner' }
     ]
   },
   {
     key: 'p6',
     label: '6 人',
-    roleIds: [
-      'werewolf',
-      'mystic_wolf',
-      'seer',
-      'apprentice_seer',
-      'witch',
-      'robber',
-      'paranormal_investigator',
-      'tanner',
-      'insomniac'
+    roles: [
+      { id: 'werewolf' },
+      { id: 'mystic_wolf' },
+      { id: 'seer' },
+      { id: 'apprentice_seer' },
+      { id: 'witch' },
+      { id: 'robber' },
+      { id: 'paranormal_investigator' },
+      { id: 'tanner' },
+      { id: 'insomniac' }
     ]
   },
   {
     key: 'p7',
     label: '7 人',
-    roleIds: [
-      'werewolf',
-      'mystic_wolf',
-      'seer',
-      'apprentice_seer',
-      'witch',
-      'robber',
-      'paranormal_investigator',
-      'tanner',
-      'sentinel'
+    roles: [
+      { id: 'werewolf' },
+      { id: 'mystic_wolf' },
+      { id: 'seer' },
+      { id: 'apprentice_seer' },
+      { id: 'witch' },
+      { id: 'robber' },
+      { id: 'paranormal_investigator' },
+      { id: 'tanner' },
+      { id: 'sentinel' }
     ]
   },
   {
     key: 'p8',
     label: '8 人',
-    roleIds: [
-      'werewolf',
-      'mystic_wolf',
-      'seer',
-      'apprentice_seer',
-      'witch',
-      'robber',
-      'paranormal_investigator',
-      'tanner',
-      'sentinel',
-      'hunter'
+    roles: [
+      { id: 'werewolf' },
+      { id: 'mystic_wolf' },
+      { id: 'seer' },
+      { id: 'apprentice_seer' },
+      { id: 'witch' },
+      { id: 'robber' },
+      { id: 'paranormal_investigator' },
+      { id: 'tanner' },
+      { id: 'sentinel' },
+      { id: 'hunter' }
     ]
   },
   {
     key: 'p9-minion',
     label: '9 人（爪牙版）',
-    roleIds: [
-      'werewolf',
-      'mystic_wolf',
-      'seer',
-      'apprentice_seer',
-      'witch',
-      'robber',
-      'paranormal_investigator',
-      'tanner',
-      'sentinel',
-      'hunter',
-      'minion'
+    roles: [
+      { id: 'werewolf' },
+      { id: 'mystic_wolf' },
+      { id: 'seer' },
+      { id: 'apprentice_seer' },
+      { id: 'witch' },
+      { id: 'robber' },
+      { id: 'paranormal_investigator' },
+      { id: 'tanner' },
+      { id: 'sentinel' },
+      { id: 'hunter' },
+      { id: 'minion' }
     ]
   },
   {
     key: 'p9-villager',
     label: '9 人（村民版）',
-    roleIds: [
-      'werewolf',
-      'mystic_wolf',
-      'seer',
-      'apprentice_seer',
-      'witch',
-      'robber',
-      'paranormal_investigator',
-      'tanner',
-      'sentinel',
-      'hunter',
-      'villager'
+    roles: [
+      { id: 'werewolf' },
+      { id: 'mystic_wolf' },
+      { id: 'seer' },
+      { id: 'apprentice_seer' },
+      { id: 'witch' },
+      { id: 'robber' },
+      { id: 'paranormal_investigator' },
+      { id: 'tanner' },
+      { id: 'sentinel' },
+      { id: 'hunter' },
+      { id: 'villager' }
     ]
   }
 ]
+const basicPresetConfigs: PresetConfig[] = [
+  {
+    key: 'b3',
+    label: '3 人',
+    roles: [
+      { id: 'werewolf', count: 2 },
+      { id: 'seer' },
+      { id: 'robber' },
+      { id: 'troublemaker' },
+      { id: 'villager' }
+    ]
+  },
+  {
+    key: 'b4',
+    label: '4 人',
+    roles: [
+      { id: 'werewolf', count: 2 },
+      { id: 'seer' },
+      { id: 'robber' },
+      { id: 'troublemaker' },
+      { id: 'villager' },
+      { id: 'insomniac' }
+    ]
+  },
+  {
+    key: 'b5',
+    label: '5 人',
+    roles: [
+      { id: 'werewolf', count: 2 },
+      { id: 'seer' },
+      { id: 'robber' },
+      { id: 'troublemaker' },
+      { id: 'villager' },
+      { id: 'insomniac' },
+      { id: 'tanner' }
+    ]
+  },
+  {
+    key: 'b6',
+    label: '6 人',
+    roles: [
+      { id: 'werewolf', count: 2 },
+      { id: 'seer' },
+      { id: 'robber' },
+      { id: 'troublemaker' },
+      { id: 'villager' },
+      { id: 'insomniac' },
+      { id: 'tanner' },
+      { id: 'hunter' }
+    ]
+  },
+  {
+    key: 'b7',
+    label: '7 人',
+    roles: [
+      { id: 'werewolf', count: 2 },
+      { id: 'seer' },
+      { id: 'robber' },
+      { id: 'troublemaker' },
+      { id: 'insomniac' },
+      { id: 'tanner' },
+      { id: 'hunter' },
+      { id: 'minion' },
+      { id: 'villager' }
+    ]
+  },
+  {
+    key: 'b8',
+    label: '8 人',
+    roles: [
+      { id: 'werewolf', count: 2 },
+      { id: 'seer' },
+      { id: 'robber' },
+      { id: 'troublemaker' },
+      { id: 'insomniac' },
+      { id: 'tanner' },
+      { id: 'hunter' },
+      { id: 'minion' },
+      { id: 'sentinel', count: 2 }
+    ]
+  },
+  {
+    key: 'b9',
+    label: '9 人',
+    roles: [
+      { id: 'werewolf', count: 2 },
+      { id: 'seer' },
+      { id: 'robber' },
+      { id: 'troublemaker' },
+      { id: 'insomniac' },
+      { id: 'tanner' },
+      { id: 'hunter' },
+      { id: 'minion' },
+      { id: 'sentinel', count: 2 },
+      { id: 'villager' }
+    ]
+  }
+]
+const activePresetConfigs = computed(() => (useBasicPresets.value ? basicPresetConfigs : legacyPresetConfigs))
 
 const filteredRoles = computed(() => {
   if (roleFilter.value === 'good') {
@@ -309,13 +446,23 @@ function parseRoleIdsFromUrl(params: URLSearchParams) {
   return decodeRoleList(single)
 }
 
+function buildRoleCounts(roleIds: string[]) {
+  const counts = new Map<string, number>()
+  roleIds.forEach((id) => {
+    counts.set(id, (counts.get(id) ?? 0) + 1)
+  })
+  return counts
+}
+
 function isRoleFilter(value: string | null): value is RoleFilter {
   return value === 'all' || value === 'good' || value === 'evil' || value === 'selected'
 }
 
 function syncUrl() {
   const query = new URLSearchParams(window.location.search)
-  const ids = Array.from(selected.value).sort()
+  const ids = Array.from(selected.value)
+    .sort()
+    .flatMap((id) => Array.from({ length: getRoleCardCountById(id) }, () => id))
 
   query.delete('roles')
   if (ids.length > 0) {
@@ -334,8 +481,18 @@ function syncUrl() {
 function restoreFromUrl() {
   const params = new URLSearchParams(window.location.search)
   const valid = new Set(roles.map((role) => role.id))
-  const roleIds = parseRoleIdsFromUrl(params)
-  selected.value = new Set(roleIds.map((id) => id.trim()).filter((id) => valid.has(id)))
+  const roleIds = parseRoleIdsFromUrl(params).map((id) => id.trim()).filter((id) => valid.has(id))
+  const counts = buildRoleCounts(roleIds)
+  const nextSelected = new Set(counts.keys())
+  const nextOverrides = new Map<string, number>()
+  counts.forEach((count, id) => {
+    const defaultCount = defaultRoleCardCountOverrides.get(id) ?? 1
+    if (count !== defaultCount) {
+      nextOverrides.set(id, count)
+    }
+  })
+  selected.value = nextSelected
+  selectedRoleCountOverrides.value = nextOverrides
 
   const filterFromUrl = params.get('filter')
   if (isRoleFilter(filterFromUrl)) {
@@ -345,17 +502,37 @@ function restoreFromUrl() {
 
 function toggleRole(roleId: string, checked: boolean) {
   const next = new Set(selected.value)
+  const nextOverrides = new Map(selectedRoleCountOverrides.value)
   if (checked) {
     next.add(roleId)
   } else {
     next.delete(roleId)
+    nextOverrides.delete(roleId)
   }
   selected.value = next
+  selectedRoleCountOverrides.value = nextOverrides
 }
 
 function applyPreset(preset: PresetConfig) {
   const validIds = new Set(roles.map((role) => role.id))
-  selected.value = new Set(preset.roleIds.filter((id) => validIds.has(id)))
+  const nextSelected = new Set<string>()
+  const nextOverrides = new Map<string, number>()
+
+  preset.roles.forEach((presetRole) => {
+    if (!validIds.has(presetRole.id)) {
+      return
+    }
+
+    const count = Math.max(1, Math.floor(presetRole.count ?? 1))
+    const defaultCount = defaultRoleCardCountOverrides.get(presetRole.id) ?? 1
+    nextSelected.add(presetRole.id)
+    if (count !== defaultCount) {
+      nextOverrides.set(presetRole.id, count)
+    }
+  })
+
+  selected.value = nextSelected
+  selectedRoleCountOverrides.value = nextOverrides
   roleFilter.value = 'selected'
 }
 
@@ -618,7 +795,7 @@ async function copyShareUrl() {
   }
 }
 
-watch([selected, roleFilter], syncUrl, { deep: false })
+watch([selected, roleFilter, selectedRoleCountOverrides], syncUrl, { deep: false })
 watch(selected, () => {
   stopAnnounce()
 }, { deep: false })
@@ -652,10 +829,23 @@ onUnmounted(() => {
         <p class="mt-1">{{ wolfTeamSummary }}</p>
       </div>
       <div class="mb-3">
-        <p class="mb-2 text-sm font-medium text-slate-700">快捷配置（3-9 人）</p>
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <p class="text-sm font-medium text-slate-700">快捷配置（3-9 人）</p>
+          <button
+            class="rounded border px-3 py-1.5 text-xs"
+            :class="
+              useBasicPresets
+                ? 'border-slate-900 bg-slate-900 text-white'
+                : 'border-slate-300 bg-white text-slate-700'
+            "
+            @click="useBasicPresets = !useBasicPresets"
+          >
+            基礎卡牌：{{ useBasicPresets ? '開' : '關' }}
+          </button>
+        </div>
         <div class="flex flex-wrap gap-2">
           <button
-            v-for="preset in presetConfigs"
+            v-for="preset in activePresetConfigs"
             :key="preset.key"
             class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
             @click="applyPreset(preset)"
