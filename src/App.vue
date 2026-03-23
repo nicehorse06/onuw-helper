@@ -56,6 +56,7 @@ function sortRolesForDisplay(a: Role, b: Role) {
 const roles = [...(rolesData as Role[])].sort(sortRolesForDisplay)
 const selected = ref<Set<string>>(new Set())
 const selectedRoleCountOverrides = ref<Map<string, number>>(new Map())
+const activePresetKey = ref('')
 const isPlaying = ref(false)
 const speechSupported = 'speechSynthesis' in window
 const speechRate = ref(1)
@@ -212,7 +213,7 @@ const legacyPresetConfigs: PresetConfig[] = [
   },
   {
     key: 'p9-minion',
-    label: '9 人（爪牙版）',
+    label: '9 人',
     roles: [
       { id: 'werewolf' },
       { id: 'mystic_wolf' },
@@ -225,23 +226,6 @@ const legacyPresetConfigs: PresetConfig[] = [
       { id: 'sentinel' },
       { id: 'hunter' },
       { id: 'minion' }
-    ]
-  },
-  {
-    key: 'p9-villager',
-    label: '9 人（村民版）',
-    roles: [
-      { id: 'werewolf' },
-      { id: 'mystic_wolf' },
-      { id: 'seer' },
-      { id: 'apprentice_seer' },
-      { id: 'witch' },
-      { id: 'robber' },
-      { id: 'paranormal_investigator' },
-      { id: 'tanner' },
-      { id: 'sentinel' },
-      { id: 'hunter' },
-      { id: 'villager' }
     ]
   }
 ]
@@ -511,6 +495,7 @@ function toggleRole(roleId: string, checked: boolean) {
   }
   selected.value = next
   selectedRoleCountOverrides.value = nextOverrides
+  activePresetKey.value = ''
 }
 
 function applyPreset(preset: PresetConfig) {
@@ -533,6 +518,7 @@ function applyPreset(preset: PresetConfig) {
 
   selected.value = nextSelected
   selectedRoleCountOverrides.value = nextOverrides
+  activePresetKey.value = preset.key
   roleFilter.value = 'selected'
 }
 
@@ -796,6 +782,9 @@ async function copyShareUrl() {
 }
 
 watch([selected, roleFilter, selectedRoleCountOverrides], syncUrl, { deep: false })
+watch(useBasicPresets, () => {
+  activePresetKey.value = ''
+})
 watch(selected, () => {
   stopAnnounce()
 }, { deep: false })
@@ -847,7 +836,12 @@ onUnmounted(() => {
           <button
             v-for="preset in activePresetConfigs"
             :key="preset.key"
-            class="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            class="rounded border px-3 py-1.5 text-sm"
+            :class="
+              activePresetKey === preset.key
+                ? 'border-slate-900 bg-slate-900 text-white'
+                : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+            "
             @click="applyPreset(preset)"
           >
             {{ preset.label }}
