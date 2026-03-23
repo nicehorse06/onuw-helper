@@ -251,6 +251,27 @@ const scriptText = computed(() => {
   return announcementLines.value.join('\n').trim()
 })
 
+const spokenScriptText = computed(() => {
+  if (selectedRoles.value.length === 0) {
+    return '請先勾選角色，系統會依照喚醒順序生成腳本。'
+  }
+
+  const lines: string[] = [nightStartLine.value]
+  const announcingRoles = selectedRoles.value.filter(roleNeedsAnnouncement)
+
+  announcingRoles.forEach((role) => {
+    lines.push(role.script)
+    if (roleNeedsWakeUp(role)) {
+      lines.push(...Array.from({ length: role.pauseSeconds }, (_, i) => String(role.pauseSeconds - i)))
+      lines.push('請閉上眼睛。')
+      lines.push(...Array.from({ length: closeEyesSeconds }, (_, i) => String(closeEyesSeconds - i)))
+    }
+  })
+
+  lines.push('夜晚結束，所有玩家請睜開眼睛。')
+  return lines.join('\n')
+})
+
 function decodeRoleList(raw: string) {
   let normalized = raw.trim()
 
@@ -529,7 +550,7 @@ function stopAnnounce() {
 
 async function copyScript() {
   try {
-    await navigator.clipboard.writeText(scriptText.value)
+    await navigator.clipboard.writeText(spokenScriptText.value)
     window.alert('腳本已複製到剪貼簿')
   } catch {
     window.alert('複製失敗，請手動複製腳本文字')
