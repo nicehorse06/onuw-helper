@@ -416,23 +416,50 @@ function pickNaturalDefaultZhVoice(voices: SpeechSynthesisVoice[]) {
     return voices[0]
   }
 
-  const zhTwOrHant = zhVoices.find((voice) => {
-    const normalizedLang = normalizeVoiceLang(voice.lang)
-    return normalizedLang.startsWith('zh-tw') || normalizedLang.includes('hant')
-  })
-  if (zhTwOrHant) {
-    return zhTwOrHant
-  }
-
   const preferredKeywords = ['natural', 'premium', 'neural', 'mei-jia', 'xiaoxiao', 'yunxi', 'google']
-  const keywordMatch = zhVoices.find((voice) =>
-    preferredKeywords.some((keyword) => voice.name.toLowerCase().includes(keyword))
-  )
-  if (keywordMatch) {
-    return keywordMatch
-  }
+  const twKeywords = ['taiwan', '台灣', '台湾', 'zh-tw', 'hant']
+  const mandarinKeywords = ['mandarin', 'putonghua', '普通话', '普通話', '國語', '国语', 'guoyu', 'cmn', 'zh-cn']
+  const cantoneseKeywords = ['cantonese', '廣東話', '广东话', 'yue', 'zh-hk', 'hong kong']
 
-  return zhVoices[0]
+  const scored = zhVoices.map((voice) => {
+    const normalizedLang = normalizeVoiceLang(voice.lang)
+    const normalizedName = voice.name.toLowerCase()
+
+    let score = 0
+
+    if (normalizedLang.startsWith('zh-tw') || normalizedLang.includes('hant')) {
+      score += 300
+    }
+    if (twKeywords.some((keyword) => normalizedName.includes(keyword))) {
+      score += 120
+    }
+
+    if (
+      normalizedLang.startsWith('zh-cn') ||
+      normalizedLang.includes('hans') ||
+      normalizedLang.includes('cmn') ||
+      mandarinKeywords.some((keyword) => normalizedName.includes(keyword))
+    ) {
+      score += 180
+    }
+
+    if (
+      normalizedLang.startsWith('zh-hk') ||
+      normalizedLang.includes('yue') ||
+      cantoneseKeywords.some((keyword) => normalizedName.includes(keyword))
+    ) {
+      score -= 120
+    }
+
+    if (preferredKeywords.some((keyword) => normalizedName.includes(keyword))) {
+      score += 40
+    }
+
+    return { voice, score }
+  })
+
+  scored.sort((a, b) => b.score - a.score)
+  return scored[0]?.voice ?? zhVoices[0]
 }
 
 function refreshVoices() {
