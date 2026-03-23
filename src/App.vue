@@ -67,11 +67,20 @@ const selectedRoles = computed(() =>
   roles.filter((role) => selected.value.has(role.id)).sort((a, b) => getWakeUpOrderValue(a) - getWakeUpOrderValue(b))
 )
 const selectedRoleCount = computed(() => selectedRoles.value.length)
+const hasMinion = computed(() => selectedRoles.value.some((role) => role.id === 'minion'))
+const nightStartLine = computed(() =>
+  hasMinion.value ? '夜晚開始，請全部玩家閉上眼睛並且手伸出來。' : '夜晚開始，請全部玩家閉上眼睛。'
+)
 const wolfSeerIds = new Set(['wolfseer', 'wolf_seer', 'wolf-seer', 'mystic_wolf'])
 const hasWolfSeer = computed(() => selectedRoles.value.some((role) => wolfSeerIds.has(role.id)))
-const wolfTeamSummary = computed(() =>
-  hasWolfSeer.value ? '狼人陣營固定 2 張：狼先知 1 + 狼人 1' : '狼人陣營固定 2 張：狼人 2'
-)
+const wolfTeamSummary = computed(() => {
+  const parts = hasWolfSeer.value ? ['狼先知 1', '狼人 1'] : ['狼人 2']
+  const evilCardCount = 2 + (hasMinion.value ? 1 : 0)
+  if (hasMinion.value) {
+    parts.push('爪牙 1')
+  }
+  return `狼人陣營固定 ${evilCardCount} 張：${parts.join(' + ')}`
+})
 const presetConfigs: PresetConfig[] = [
   {
     key: 'p3',
@@ -204,9 +213,10 @@ const announcementLines = computed(() => {
     return ['請先勾選角色，系統會依照喚醒順序生成腳本。']
   }
 
-  const lines: string[] = ['夜晚開始，請全部玩家閉上眼睛。']
+  const lines: string[] = [nightStartLine.value]
+  const announcingRoles = selectedRoles.value.filter(roleNeedsAnnouncement)
 
-  selectedRoles.value.forEach((role, index) => {
+  announcingRoles.forEach((role, index) => {
     lines.push(`${index + 1}. ${role.name}`)
     lines.push(role.script)
     if (roleNeedsWakeUp(role)) {
@@ -352,6 +362,10 @@ function roleNeedsWakeUp(role: Role) {
   return role.wakeUpOrder !== null && role.pauseSeconds > 0
 }
 
+function roleNeedsAnnouncement(role: Role) {
+  return role.wakeUpOrder !== null
+}
+
 function getZhVoices(voices: SpeechSynthesisVoice[]) {
   return voices.filter((voice) => voice.lang.toLowerCase().startsWith('zh'))
 }
@@ -456,10 +470,11 @@ async function announce() {
   }
 
   try {
-    await speak('夜晚開始，請全部玩家閉上眼睛。')
+    await speak(nightStartLine.value)
     if (announceSession.value !== sessionId) return
     if (!(await sleepWithCancel(sentencePauseMs, sessionId))) return
-    for (const role of selectedRoles.value) {
+    const announcingRoles = selectedRoles.value.filter(roleNeedsAnnouncement)
+    for (const role of announcingRoles) {
       if (announceSession.value !== sessionId) return
       await speak(role.script)
       if (announceSession.value !== sessionId) return
@@ -505,7 +520,13 @@ async function copyRoleOnlyScript() {
     return
   }
 
-  const roleOnlyText = selectedRoles.value
+  const announcingRoles = selectedRoles.value.filter(roleNeedsAnnouncement)
+  if (announcingRoles.length === 0) {
+    window.alert('目前勾選角色都不需要夜間朗讀')
+    return
+  }
+
+  const roleOnlyText = announcingRoles
     .map((role, index) => `${index + 1}. ${role.name}（${role.pauseSeconds} 秒）\n${role.script}`)
     .join('\n\n')
 
