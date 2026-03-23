@@ -772,7 +772,7 @@ onUnmounted(() => {
           class="w-full"
           type="range"
           min="0.6"
-          max="1.6"
+          max="2"
           step="0.1"
         />
         <label class="mb-2 mt-3 block text-sm font-medium text-slate-700" for="countdown-speech-rate">
@@ -784,7 +784,7 @@ onUnmounted(() => {
           class="w-full"
           type="range"
           min="0.6"
-          max="1.6"
+          max="2"
           step="0.1"
         />
         <label class="mb-2 mt-3 block text-sm font-medium text-slate-700" for="speech-pitch">
