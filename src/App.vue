@@ -58,6 +58,7 @@ const selected = ref<Set<string>>(new Set())
 const selectedRoleCountOverrides = ref<Map<string, number>>(new Map())
 const activePresetKey = ref('')
 const isPlaying = ref(false)
+const isPaused = ref(false)
 const speechSupported = 'speechSynthesis' in window
 const speechRate = ref(1)
 const countdownSpeechRate = ref(1)
@@ -551,6 +552,12 @@ async function sleepWithCancel(ms: number, sessionId: number) {
     if (announceSession.value !== sessionId) {
       return false
     }
+    while (isPaused.value && announceSession.value === sessionId) {
+      await sleep(stepMs)
+    }
+    if (announceSession.value !== sessionId) {
+      return false
+    }
     const remaining = Math.min(stepMs, ms - elapsed)
     await sleep(remaining)
     elapsed += remaining
@@ -648,6 +655,12 @@ async function countDown(seconds: number, sessionId: number) {
     if (announceSession.value !== sessionId) {
       return false
     }
+    while (isPaused.value && announceSession.value === sessionId) {
+      await sleep(250)
+    }
+    if (announceSession.value !== sessionId) {
+      return false
+    }
 
     const start = performance.now()
     await speak(String(current), countdownSpeechRate.value)
@@ -699,6 +712,7 @@ async function announce() {
   const sessionId = announceSession.value + 1
   announceSession.value = sessionId
   isPlaying.value = true
+  isPaused.value = false
   if (speechSupported) {
     window.speechSynthesis.cancel()
   }
@@ -727,16 +741,54 @@ async function announce() {
   } finally {
     if (announceSession.value === sessionId) {
       isPlaying.value = false
+      isPaused.value = false
     }
+  }
+}
+
+function pauseAnnounce() {
+  if (!isPlaying.value || isPaused.value) {
+    return
+  }
+
+  isPaused.value = true
+  if (speechSupported && window.speechSynthesis.speaking) {
+    window.speechSynthesis.pause()
+  }
+}
+
+function resumeAnnounce() {
+  if (!isPlaying.value || !isPaused.value) {
+    return
+  }
+
+  isPaused.value = false
+  if (speechSupported && window.speechSynthesis.paused) {
+    window.speechSynthesis.resume()
   }
 }
 
 function stopAnnounce() {
   announceSession.value += 1
   isPlaying.value = false
+  isPaused.value = false
   if (speechSupported) {
     window.speechSynthesis.cancel()
   }
+}
+
+function handleAnnounceButton() {
+  if (!isPlaying.value) {
+    void announce()
+    return
+  }
+
+  if (isPaused.value) {
+    resumeAnnounce()
+    return
+  }
+
+  pauseAnnounce()
 }
 
 async function copyScript() {
@@ -919,10 +971,10 @@ onUnmounted(() => {
       <div class="mb-3 flex flex-wrap gap-2">
         <button
           class="rounded bg-slate-900 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="selectedRoles.length === 0 || isPlaying"
-          @click="announce"
+          :disabled="selectedRoles.length === 0"
+          @click="handleAnnounceButton"
         >
-          開始語音播報
+          {{ !isPlaying ? '開始語音播報' : isPaused ? '繼續播報' : '暫停播報' }}
         </button>
         <button
           class="rounded border border-red-300 px-4 py-2 text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
