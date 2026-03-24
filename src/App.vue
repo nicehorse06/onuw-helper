@@ -858,7 +858,17 @@ onUnmounted(() => {
 
 <template>
   <main class="mx-auto min-h-screen max-w-4xl p-6">
-    <h1 class="mb-2 text-3xl font-bold">一夜終極狼人殺小幫手</h1>
+    <div class="mb-2 flex items-center justify-between gap-3">
+      <h1 class="text-3xl font-bold">一夜終極狼人殺小幫手</h1>
+      <a
+        href="https://github.com/nicehorse06/onuw-helper"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+      >
+        GitHub
+      </a>
+    </div>
     <p class="mb-6 text-slate-600">勾選角色後，會自動依喚醒順序生成夜晚腳本。</p>
 
     <section class="mb-6 rounded-lg bg-white p-4 shadow-sm">
