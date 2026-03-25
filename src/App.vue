@@ -778,7 +778,7 @@ function startDebateTimer() {
     resetDebateTimer()
   }
 
-  speakTimerHint('計時開始')
+  speakTimerHint(`倒數 ${debateRemainingSeconds.value} 秒發言開始`)
   isDebateTimerRunning.value = true
   clearDebateTimerInterval()
   debateTimerId.value = window.setInterval(() => {
