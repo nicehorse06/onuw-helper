@@ -774,6 +774,9 @@ function startDebateTimer() {
   if (isDebateTimerRunning.value) {
     return
   }
+  if (isPlaying.value) {
+    stopAnnounce()
+  }
   if (debateRemainingSeconds.value <= 0) {
     resetDebateTimer()
   }
@@ -822,14 +825,15 @@ async function announce() {
   if (isPlaying.value || selectedRoles.value.length === 0) {
     return
   }
+  pauseDebateTimer()
+  if (speechSupported) {
+    window.speechSynthesis.cancel()
+  }
 
   const sessionId = announceSession.value + 1
   announceSession.value = sessionId
   isPlaying.value = true
   isPaused.value = false
-  if (speechSupported) {
-    window.speechSynthesis.cancel()
-  }
 
   try {
     await speak(nightStartLine.value)
