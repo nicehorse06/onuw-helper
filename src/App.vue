@@ -73,6 +73,7 @@ const neutralRoleIds = new Set(['tanner'])
 const defaultRoleCardCountOverrides = new Map<string, number>([['sentinel', 2]])
 const availableVoices = ref<SpeechSynthesisVoice[]>([])
 const selectedVoiceURI = ref('')
+const shouldUsePauseFallback = /android|iphone|ipad|ipod|mobile/i.test(window.navigator.userAgent)
 
 function getRoleCardCountById(roleId: string) {
   return selectedRoleCountOverrides.value.get(roleId) ?? defaultRoleCardCountOverrides.get(roleId) ?? 1
@@ -752,6 +753,11 @@ function pauseAnnounce() {
   }
 
   isPaused.value = true
+  if (speechSupported && shouldUsePauseFallback) {
+    window.speechSynthesis.cancel()
+    return
+  }
+
   if (speechSupported && window.speechSynthesis.speaking) {
     window.speechSynthesis.pause()
   }
@@ -763,6 +769,10 @@ function resumeAnnounce() {
   }
 
   isPaused.value = false
+  if (shouldUsePauseFallback) {
+    return
+  }
+
   if (speechSupported && window.speechSynthesis.paused) {
     window.speechSynthesis.resume()
   }
