@@ -74,6 +74,20 @@ const defaultRoleCardCountOverrides = new Map<string, number>([['sentinel', 2]])
 const availableVoices = ref<SpeechSynthesisVoice[]>([])
 const selectedVoiceURI = ref('')
 const shouldUsePauseFallback = /android|iphone|ipad|ipod|mobile/i.test(window.navigator.userAgent)
+const debatePresetSeconds = ref(60)
+const debateRemainingSeconds = ref(60)
+const isDebateTimerRunning = ref(false)
+const debateTimerId = ref<number | null>(null)
+const hasHalfTimeHintPlayed = ref(false)
+const isDebateTimerOpen = ref(false)
+const debateQuickLines = [
+  { key: 'praise', label: '稱讚', text: '講得真棒' },
+  { key: 'suspicious', label: '說謊', text: '非常可疑' },
+  { key: 'no_discuss', label: '不能討論', text: '其他人不能討論' },
+  { key: 'werewolf', label: '狼人', text: '你是狼人' },
+  { key: 'good', label: '好人', text: '我是好人' },
+  { key: 'seer', label: '預言家', text: '我是預言家' }
+]
 
 function getRoleCardCountById(roleId: string) {
   return selectedRoleCountOverrides.value.get(roleId) ?? defaultRoleCardCountOverrides.get(roleId) ?? 1
@@ -89,6 +103,11 @@ const selectedRoles = computed(() =>
 const selectedRoleCount = computed(() => selectedRoles.value.length)
 const selectedCardCount = computed(() => selectedRoles.value.reduce((total, role) => total + getRoleCardCount(role), 0))
 const playerCount = computed(() => Math.max(0, selectedCardCount.value - 3))
+const debateTimerDisplay = computed(() => {
+  const minutes = Math.floor(debateRemainingSeconds.value / 60)
+  const seconds = debateRemainingSeconds.value % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+})
 const selectedGoodRoles = computed(() =>
   selectedRoles.value.filter((role) => !evilRoleIds.has(role.id) && !neutralRoleIds.has(role.id))
 )
@@ -705,6 +724,100 @@ function speak(text: string, rateOverride?: number) {
   })
 }
 
+function speakTimerHint(text: string) {
+  if (isPlaying.value || !speechSupported) {
+    return
+  }
+  void speak(text)
+}
+
+function speakDebateLine(text: string) {
+  if (!speechSupported || isPlaying.value) {
+    return
+  }
+  window.speechSynthesis.cancel()
+  void speak(text)
+}
+
+function clearDebateTimerInterval() {
+  if (debateTimerId.value !== null) {
+    window.clearInterval(debateTimerId.value)
+    debateTimerId.value = null
+  }
+}
+
+function pauseDebateTimer() {
+  isDebateTimerRunning.value = false
+  clearDebateTimerInterval()
+}
+
+function resetDebateTimer(seconds = debatePresetSeconds.value) {
+  pauseDebateTimer()
+  debateRemainingSeconds.value = Math.max(0, seconds)
+  hasHalfTimeHintPlayed.value = false
+}
+
+function setDebatePreset(seconds: number) {
+  debatePresetSeconds.value = seconds
+  resetDebateTimer(seconds)
+}
+
+function addDebateTime(seconds: number) {
+  debateRemainingSeconds.value = Math.max(0, debateRemainingSeconds.value + seconds)
+  const halfMark = Math.ceil(debatePresetSeconds.value / 2)
+  if (debateRemainingSeconds.value > halfMark) {
+    hasHalfTimeHintPlayed.value = false
+  }
+}
+
+function startDebateTimer() {
+  if (isDebateTimerRunning.value) {
+    return
+  }
+  if (debateRemainingSeconds.value <= 0) {
+    resetDebateTimer()
+  }
+
+  speakTimerHint('計時開始')
+  isDebateTimerRunning.value = true
+  clearDebateTimerInterval()
+  debateTimerId.value = window.setInterval(() => {
+    if (debateRemainingSeconds.value <= 0) {
+      pauseDebateTimer()
+      return
+    }
+
+    debateRemainingSeconds.value -= 1
+    const halfMark = Math.ceil(debatePresetSeconds.value / 2)
+
+    if (!hasHalfTimeHintPlayed.value && debateRemainingSeconds.value === halfMark) {
+      hasHalfTimeHintPlayed.value = true
+      speakTimerHint(`剩下 ${halfMark} 秒`)
+    }
+
+    if (debateRemainingSeconds.value <= 10 && debateRemainingSeconds.value >= 1) {
+      speakTimerHint(String(debateRemainingSeconds.value))
+    }
+
+    if (debateRemainingSeconds.value <= 0) {
+      pauseDebateTimer()
+      speakTimerHint('發言結束')
+    }
+  }, 1000)
+}
+
+function toggleDebateTimer() {
+  if (isDebateTimerRunning.value) {
+    pauseDebateTimer()
+    return
+  }
+  startDebateTimer()
+}
+
+function toggleDebateTimerModal() {
+  isDebateTimerOpen.value = !isDebateTimerOpen.value
+}
+
 async function announce() {
   if (isPlaying.value || selectedRoles.value.length === 0) {
     return
@@ -852,6 +965,7 @@ watch(selected, () => {
 }, { deep: false })
 onMounted(() => {
   stopAnnounce()
+  resetDebateTimer()
   restoreFromUrl()
   refreshVoices()
   if (speechSupported) {
@@ -860,6 +974,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   stopAnnounce()
+  pauseDebateTimer()
   if (speechSupported) {
     window.speechSynthesis.removeEventListener('voiceschanged', refreshVoices)
   }
@@ -1006,6 +1121,7 @@ onUnmounted(() => {
         <button class="rounded border border-slate-300 px-4 py-2" @click="copyShareUrl">複製分享網址</button>
         <button class="rounded border border-slate-300 px-4 py-2" @click="copyScript">複製完整播報稿</button>
         <button class="rounded border border-slate-300 px-4 py-2" @click="copyRoleOnlyScript">複製角色腳本</button>
+        <button class="rounded border border-slate-300 px-4 py-2" @click="toggleDebateTimerModal">發言計時器</button>
       </div>
       <div class="mb-4 rounded-md bg-slate-100 p-3">
         <label class="mb-2 block text-sm font-medium text-slate-700" for="voice-select">語音</label>
@@ -1061,6 +1177,60 @@ onUnmounted(() => {
       <h2 class="mb-2 text-xl font-semibold">生成腳本</h2>
       <pre class="whitespace-pre-wrap rounded bg-slate-100 p-4 text-sm">{{ scriptText }}</pre>
     </section>
+
+    <div
+      v-if="isDebateTimerOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      @click.self="toggleDebateTimerModal"
+    >
+      <div class="w-full max-w-sm rounded-lg bg-white p-4 shadow-lg">
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <h3 class="text-base font-semibold text-slate-800">發言計時器</h3>
+          <button class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700" @click="toggleDebateTimerModal">
+            關閉
+          </button>
+        </div>
+        <p class="mb-1 text-xs text-slate-500">預設 {{ debatePresetSeconds }} 秒</p>
+        <p class="mb-3 text-center font-mono text-4xl font-bold text-slate-800">{{ debateTimerDisplay }}</p>
+        <div class="mb-3 grid grid-cols-3 gap-2">
+          <button class="rounded bg-slate-900 px-3 py-2 text-sm text-white" @click="toggleDebateTimer">
+            {{ isDebateTimerRunning ? '暫停' : '開始' }}
+          </button>
+          <button class="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700" @click="resetDebateTimer()">
+            重設
+          </button>
+          <button class="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700" @click="addDebateTime(10)">
+            +10 秒
+          </button>
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          <button class="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700" @click="setDebatePreset(30)">
+            30 秒
+          </button>
+          <button class="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700" @click="setDebatePreset(60)">
+            60 秒
+          </button>
+          <button class="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700" @click="setDebatePreset(90)">
+            90 秒
+          </button>
+        </div>
+        <p class="mt-2 text-xs text-slate-500">會在一半時間與剩 10 秒時語音提醒。</p>
+
+        <div class="mt-4 border-t border-slate-200 pt-3">
+          <h4 class="mb-2 text-sm font-medium text-slate-700">發言快捷語音</h4>
+          <div class="grid grid-cols-2 gap-2">
+            <button
+              v-for="line in debateQuickLines"
+              :key="line.key"
+              class="rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              @click="speakDebateLine(line.text)"
+            >
+              {{ line.label }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <p v-if="!speechSupported" class="mt-4 text-sm text-amber-700">
       你的瀏覽器不支援 SpeechSynthesis，仍可使用文字腳本。
