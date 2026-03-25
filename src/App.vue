@@ -1171,8 +1171,8 @@ onUnmounted(() => {
           v-model.number="speechPitch"
           class="w-full"
           type="range"
-          min="0.8"
-          max="1.4"
+          min="0.5"
+          max="2"
           step="0.1"
         />
         <p class="mt-1 text-xs text-slate-500">已加入句子間停頓，倒數仍維持每秒一個數字。</p>
